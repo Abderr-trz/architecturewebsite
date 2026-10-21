@@ -142,3 +142,58 @@
   });
   configure();
 })();
+
+// Native disclosures stay usable without JavaScript; motion is a progressive enhancement.
+(() => {
+  const items=[...document.querySelectorAll('.expertise-item')];
+  const visual=document.querySelector('.expertise-visual');
+  const image=document.getElementById('expertise-image');
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+  const hover=matchMedia('(hover:hover) and (pointer:fine)');
+  const content=[
+    {image:'residence-minerale',alt:'Perspective d’une villa contemporaine ouverte sur son jardin',caption:'PERSPECTIVE ARCHITECTURALE',statement:'Dessiner ce qui nous entoure.'},
+    {image:'jardin-eau',alt:'Perspective paysagère avec piscine et végétation, illustration des rapports entre espaces',caption:'VUE PAYSAGÈRE · ILLUSTRATION',statement:'Relier les lieux et les usages.'},
+    {image:'perspectives-selection',alt:'Sélection de perspectives fournies : façades, salon et chambres',caption:'SÉLECTION DE PERSPECTIVES FOURNIES',statement:'Habiter jusque dans le détail.'}
+  ];
+  let current=0,animationTimer;
+  function update(index){
+    if(index===current)return;
+    current=index;
+    image.src=`assets/${content[index].image}.webp`;
+    image.alt=content[index].alt;
+    document.getElementById('expertise-caption').textContent=content[index].caption;
+    document.getElementById('expertise-count').textContent=`0${index+1} / 03`;
+    document.getElementById('expertise-statement').textContent=content[index].statement;
+    if(!reduced.matches){
+      visual.classList.remove('is-changing');
+      // Restart a finite reveal, with no persistent frame loop.
+      void visual.offsetWidth;
+      visual.classList.add('is-changing');
+      clearTimeout(animationTimer);
+      animationTimer=setTimeout(()=>visual.classList.remove('is-changing'),550);
+    }
+  }
+  items.forEach((item,index)=>{
+    item.addEventListener('toggle',()=>{if(item.open){items.forEach(other=>{if(other!==item)other.open=false;});update(index);}});
+    item.addEventListener('mouseenter',()=>{if(hover.matches)item.open=true;});
+  });
+  // Only elements below the viewport are staged; content stays visible if enhancement fails.
+  let observer;
+  function setupReveals(){
+    observer?.disconnect();
+    document.querySelectorAll('.reveal-pending').forEach(el=>el.classList.remove('reveal-pending'));
+    if(reduced.matches||!('IntersectionObserver' in window))return;
+    observer=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(entry.isIntersecting){entry.target.classList.remove('reveal-pending');entry.target.classList.add('reveal-visible');observer.unobserve(entry.target);}
+      });
+    },{threshold:.08,rootMargin:'0px 0px 20px 0px'});
+    document.querySelectorAll('[data-reveal]').forEach(el=>{
+      if(el.getBoundingClientRect().top>innerHeight){el.classList.add('reveal-pending');observer.observe(el);}
+    });
+  }
+  reduced.addEventListener('change',setupReveals);
+  window.addEventListener('pageshow',setupReveals);
+  window.addEventListener('pagehide',event=>{clearTimeout(animationTimer);observer?.disconnect();if(!event.persisted){reduced.removeEventListener('change',setupReveals);window.removeEventListener('pageshow',setupReveals);}});
+  setupReveals();
+})();
