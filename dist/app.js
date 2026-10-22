@@ -67,7 +67,7 @@
   const image=document.createElement('img');image.alt='';image.width=1104;image.height=624;image.decoding='async';
   link.append(image);card.append(link);orbit.append(card);return {card,link,image,offset:i-2,index:-1};
  });scene.append(orbit);
- let active=-1,viewed=0,frame=0,enabled=false,position=0,lastFocus=null;
+ let active=-1,viewed=0,frame=0,enabled=false,position=0,mobile=false,mobileTarget=0,lastFocus=null;
  function select(index){
   if(index===active)return;active=index;
   document.getElementById('project-number').textContent=`0${active+1} / 04`;
@@ -78,16 +78,17 @@
  }
  function metrics(){const box=track.getBoundingClientRect(),top=parseFloat(getComputedStyle(sticky).top)||0;return {box,top,travel:Math.max(1,track.offsetHeight-sticky.offsetHeight)};}
  function target(){
+  if(mobile)return mobileTarget;
   const {box,top,travel}=metrics();const p=clamp((top-box.top)/travel,0,1)*3;
   const step=Math.min(2,Math.floor(p)),t=clamp((p-step-.17)/.66,0,1);return step+t*t*(3-2*t);
  }
  function render(){
   const base=Math.floor(position),fraction=position-base,width=section.clientWidth;
-  const spacing=width*.335,tail=width*.155;
+  const spacing=width*(mobile?.59:.335),tail=width*(mobile?.12:.155);
   slots.forEach(slot=>{
    const d=slot.offset-fraction,a=Math.abs(d),index=wrap(base+slot.offset),sign=Math.sign(d);
    const x=sign*(a<=1?a*spacing:spacing+(a-1)*tail);
-   const z=-a*155,y=a*7,yaw=-sign*Math.min(74,a*36);
+   const z=-a*(mobile?90:155),y=a*(mobile?4:7),yaw=-sign*Math.min(mobile?68:74,a*(mobile?32:36));
    slot.card.style.transform=`translate3d(${x}px,${y}px,${z}px) rotateY(${yaw}deg) scale(${1-.4*Math.min(a,1)})`;
    slot.card.style.opacity=String(clamp((2.65-a)/.55,0,1));
    const selected=a<.5;
@@ -99,8 +100,16 @@
  }
  function animate(){frame=0;if(!enabled)return;const t=target();position+=(t-position)*.15;if(Math.abs(t-position)<.001)position=t;render();if(Math.abs(t-position)>=.001)frame=requestAnimationFrame(animate);}
  function schedule(){if(enabled&&!frame)frame=requestAnimationFrame(animate);}
- function configure(){enabled=desktop.matches&&!reduced.matches;section.classList.toggle('gallery-enhanced',enabled);orbit.hidden=!enabled;cancelAnimationFrame(frame);frame=0;if(enabled){position=target();render();}else select(Math.max(0,active));}
- function go(direction){const next=clamp(active+direction,0,3),{box,top,travel}=metrics();window.scrollTo({top:scrollY+box.top-top+(next/3)*travel,behavior:reduced.matches?'instant':'smooth'});document.getElementById('gallery-announcement').textContent=`Perspective ${next+1} sur 4 : ${projects[next].title}`;}
+ function configure(){mobile=!desktop.matches;enabled=!reduced.matches;section.classList.toggle('gallery-enhanced',enabled);section.classList.toggle('gallery-mobile',enabled&&mobile);orbit.hidden=!enabled;cancelAnimationFrame(frame);frame=0;section.querySelector('.gallery-scroll-hint').textContent=mobile?'GLISSEZ POUR EXPLORER ↔':'FAITES DÉFILER POUR EXPLORER ↓';if(enabled){mobileTarget=clamp(Math.round(position),0,3);position=target();render();}else select(Math.max(0,active));}
+ function goTo(next){next=clamp(next,0,3);if(mobile){mobileTarget=next;schedule();}else{const {box,top,travel}=metrics();window.scrollTo({top:scrollY+box.top-top+(next/3)*travel,behavior:reduced.matches?'instant':'smooth'});}document.getElementById('gallery-announcement').textContent=`Perspective ${next+1} sur 4 : ${projects[next].title}`;}
+ function go(direction){goTo((mobile?mobileTarget:active)+direction);}
+ let gesture=null,suppressClick=false;
+ scene.addEventListener('pointerdown',e=>{if(!mobile||!enabled)return;gesture={x:e.clientX,y:e.clientY,id:e.pointerId};suppressClick=false;});
+ scene.addEventListener('pointermove',e=>{if(!gesture||gesture.id!==e.pointerId)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy)*1.3)suppressClick=true;},{passive:true});
+ scene.addEventListener('pointerup',e=>{if(!gesture||gesture.id!==e.pointerId)return;const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;gesture=null;if(Math.abs(dx)>42&&Math.abs(dx)>Math.abs(dy)*1.3){suppressClick=true;go(dx<0?1:-1);}});
+ scene.addEventListener('pointercancel',()=>{gesture=null;});
+ scene.addEventListener('click',e=>{if(suppressClick){e.preventDefault();e.stopPropagation();suppressClick=false;}},true);
+ scene.addEventListener('keydown',e=>{if(mobile&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();go(e.key==='ArrowRight'?1:-1);}});
  function showImage(index){viewed=wrap(index);const image=document.getElementById('viewer-image');image.src=`assets/${projects[viewed].image}.webp`;image.alt=projects[viewed].alt;document.getElementById('viewer-title').textContent=projects[viewed].title;document.getElementById('viewer-count').textContent=`0${viewed+1} / 04`;}
  function openViewer(index,trigger){lastFocus=trigger;showImage(index);viewer.showModal();}
  document.querySelectorAll('[data-project]').forEach(button=>button.addEventListener('click',()=>openViewer(Number(button.dataset.project),button)));
@@ -108,8 +117,8 @@
  section.querySelector('.gallery-prev').addEventListener('click',()=>go(-1));section.querySelector('.gallery-next').addEventListener('click',()=>go(1));
  document.querySelector('.viewer-prev').addEventListener('click',()=>showImage(viewed-1));document.querySelector('.viewer-next').addEventListener('click',()=>showImage(viewed+1));document.querySelector('.viewer-close').addEventListener('click',()=>viewer.close());
  viewer.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();showImage(viewed-1);}if(e.key==='ArrowRight'){e.preventDefault();showImage(viewed+1);}});viewer.addEventListener('close',()=>lastFocus?.focus({preventScroll:true}));
- addEventListener('scroll',schedule,{passive:true});addEventListener('resize',schedule);desktop.addEventListener('change',configure);reduced.addEventListener('change',configure);addEventListener('pageshow',configure);
- addEventListener('pagehide',e=>{cancelAnimationFrame(frame);frame=0;if(e.persisted)return;removeEventListener('scroll',schedule);removeEventListener('resize',schedule);desktop.removeEventListener('change',configure);reduced.removeEventListener('change',configure);removeEventListener('pageshow',configure);});configure();
+ addEventListener('scroll',schedule,{passive:true});addEventListener('resize',configure);desktop.addEventListener('change',configure);reduced.addEventListener('change',configure);addEventListener('pageshow',configure);
+ addEventListener('pagehide',e=>{cancelAnimationFrame(frame);frame=0;if(e.persisted)return;removeEventListener('scroll',schedule);removeEventListener('resize',configure);desktop.removeEventListener('change',configure);reduced.removeEventListener('change',configure);removeEventListener('pageshow',configure);});configure();
 })();
 
 // Native disclosures stay usable without JavaScript; motion is a progressive enhancement.
